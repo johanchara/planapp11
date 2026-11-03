@@ -1,0 +1,534 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Plan de Producción — Falcon Farms</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<style>
+  :root { --navy:#1F3864; --navy2:#2E4F8A; }
+  body { background:#f0f2f5; font-family:Arial,sans-serif; font-size:13px; }
+
+  /* NAV */
+  .top-nav { background:var(--navy); color:#fff; padding:10px 20px; display:flex; align-items:center; justify-content:space-between; }
+  .top-nav h1 { font-size:1.1rem; font-weight:700; margin:0; }
+  .top-nav .user-info { font-size:0.85rem; color:#a8c0e8; display:flex; align-items:center; gap:12px; }
+  .nav-tabs .nav-link { color:#555; font-weight:600; }
+  .nav-tabs .nav-link.active { color:var(--navy); border-bottom:2px solid var(--navy); }
+
+  /* FILTERS */
+  .filters-bar { background:#fff; border-bottom:1px solid #dee2e6; padding:10px 16px; display:flex; flex-wrap:wrap; gap:8px; align-items:flex-end; }
+  .filters-bar .form-label { font-size:11px; font-weight:600; color:#555; margin-bottom:2px; }
+  .filters-bar .form-control, .filters-bar .form-select { font-size:12px; padding:4px 8px; height:30px; }
+  .btn-sm-custom { font-size:12px; padding:4px 14px; height:30px; }
+
+  /* DISTRIBUCION TABLE */
+  .dist-table-wrap { overflow-x:auto; max-height:calc(100vh - 220px); overflow-y:auto; }
+  .dist-table { width:100%; border-collapse:collapse; font-size:12px; }
+  .dist-table th { background:var(--navy); color:#fff; padding:6px 8px; position:sticky; top:0; z-index:2; white-space:nowrap; text-align:center; }
+  .dist-table td { padding:4px 8px; border-bottom:1px solid #e0e0e0; vertical-align:middle; white-space:nowrap; }
+  .dist-table .sep-row td { background:#2E75B6; color:#fff; font-weight:700; font-size:13px; padding:5px 10px; }
+  .dist-table tr:hover td { filter:brightness(0.95); }
+  .editable-cell { cursor:pointer; min-width:60px; }
+  .editable-cell:hover { background:rgba(31,56,100,0.08) !important; }
+  .editable-cell input { border:none; background:transparent; width:100%; font-size:12px; outline:none; padding:0; }
+
+  /* Customer colors */
+  .c-blue   { background:#ADD8E6 !important; }
+  .c-yellow { background:#FFFF99 !important; }
+  .c-green  { background:#90EE90 !important; }
+  .c-purple { background:#D8BFD8 !important; }
+  .c-pink   { background:#FFB6C1 !important; }
+  .c-gray   { background:#D3D3D3 !important; }
+  .c-sprout { background:#FFB6FF !important; }
+  .c-stater { background:#FFC878 !important; }
+  .c-tawa   { background:#D2B48C !important; }
+  .c-cd     { background:#f2f2f2 !important; color:#999; }
+  .bucket-cell { background:#FFA500; font-weight:700; color:#fff; text-align:center; }
+
+  /* CR */
+  .cr-header-date { background:#FA8072; color:#fff; font-size:1.4rem; font-weight:700; font-style:italic; padding:12px 20px; border-radius:6px 0 0 6px; }
+  .cr-line-badge { background:#006400; color:#fff; font-size:1rem; font-weight:700; font-style:italic; padding:12px 16px; border-radius:0 6px 6px 0; display:inline-block; }
+  .cr-sum-row { background:#FFE699; font-weight:700; }
+  .cr-total-cell { background:#FFA500; font-weight:700; color:#fff; text-align:center; }
+  .cr-header-row th { background:#003C00; color:#fff; font-size:12px; padding:6px 8px; text-align:center; }
+  .cr-table { width:100%; border-collapse:collapse; font-size:12px; }
+  .cr-table td { padding:4px 8px; border:1px solid #ccc; }
+
+  /* STORAGE */
+  .storage-table { width:100%; border-collapse:collapse; font-size:13px; max-width:500px; }
+  .storage-table th { background:var(--navy); color:#fff; padding:8px 12px; text-align:center; }
+  .storage-table td { padding:6px 12px; border:1px solid #ccc; text-align:center; }
+  .storage-total { background:#FFE699; font-weight:700; }
+  .storage-total td:nth-child(2), .storage-total td:nth-child(3) { background:#FFA500; color:#fff; }
+  .vase-cell { background:#FFFF99 !important; }
+
+  /* IMPORT MODAL */
+  .progress-log { background:#111; color:#0f0; font-family:monospace; font-size:12px; padding:12px; border-radius:6px; height:180px; overflow-y:auto; }
+
+  /* PRINT */
+  @media print {
+    .top-nav, .filters-bar, .nav, .btn, .modal { display:none !important; }
+    body { background:#fff; }
+    .cr-header-date { -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+    .cr-total-cell, .bucket-cell, .cr-line-badge { -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+    [class^="c-"] { -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  }
+</style>
+</head>
+<body>
+
+<!-- TOP NAV -->
+<div class="top-nav">
+  <h1>🌸 Falcon Farms — Plan de Producción</h1>
+  <div class="user-info">
+    <span id="navUsername"></span>
+    <a href="/admin" id="adminLink" class="text-warning text-decoration-none d-none">⚙ Admin</a>
+    <a href="#" onclick="logout()" class="text-light text-decoration-none">Salir</a>
+  </div>
+</div>
+
+<!-- TABS -->
+<ul class="nav nav-tabs px-3 pt-2 bg-white border-bottom">
+  <li class="nav-item"><a class="nav-link active" href="#" onclick="showTab('dist',this)">📋 Distribución</a></li>
+  <li class="nav-item"><a class="nav-link" href="#" onclick="showTab('cr',this)">📄 CR</a></li>
+  <li class="nav-item"><a class="nav-link" href="#" onclick="showTab('storage',this)">📦 Storage</a></li>
+</ul>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- TAB: DISTRIBUCIÓN -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+<div id="tab-dist">
+  <div class="filters-bar">
+    <div>
+      <div class="form-label">Fecha</div>
+      <input type="date" class="form-control" id="fFecha" onchange="loadDist()">
+    </div>
+    <div>
+      <div class="form-label">Día</div>
+      <select class="form-select" id="fDia" onchange="loadDist()">
+        <option value="">Todos</option>
+        <option>MONDAY</option><option>TUESDAY</option><option>WEDNESDAY</option>
+        <option>THURSDAY</option><option>FRIDAY</option><option>SATURDAY</option><option>SUNDAY</option>
+      </select>
+    </div>
+    <div>
+      <div class="form-label">Cliente</div>
+      <input type="text" class="form-control" id="fCliente" placeholder="Buscar..." oninput="loadDist()" style="width:140px">
+    </div>
+    <div>
+      <div class="form-label">Producto</div>
+      <input type="text" class="form-control" id="fProducto" placeholder="Buscar..." oninput="loadDist()" style="width:140px">
+    </div>
+    <div>
+      <div class="form-label">Actividad</div>
+      <select class="form-select" id="fActividad" onchange="loadDist()">
+        <option value="">Todas</option>
+        <option>WPO</option><option>SPO</option><option>MPO</option><option>LPO</option>
+        <option>VASE</option><option>CD</option><option>NO CUENTA</option>
+      </select>
+    </div>
+    <div class="ms-auto d-flex gap-2">
+      <button class="btn btn-success btn-sm-custom" onclick="openImportModal()">⬇ Descargar desde WebFlowers</button>
+      <button class="btn btn-outline-secondary btn-sm-custom" onclick="loadDist()">🔄 Actualizar</button>
+    </div>
+  </div>
+
+  <div class="dist-table-wrap" id="distWrap">
+    <table class="dist-table" id="distTable">
+      <thead>
+        <tr>
+          <th>Day</th><th>PO INBOUND</th><th>LOAD</th><th>Prioridad</th>
+          <th>Customer Group</th><th>Customer</th><th>Due Date</th>
+          <th>P.O# OUTBOUND</th><th>Product Name</th><th>Pull Date</th>
+          <th>Box</th><th>Pack</th><th>Boxes</th><th>Activity</th><th>Buckets</th>
+        </tr>
+      </thead>
+      <tbody id="distBody">
+        <tr><td colspan="15" class="text-center text-muted py-4">Cargando...</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- TAB: CR -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+<div id="tab-cr" class="d-none p-3">
+  <div class="d-flex align-items-center gap-3 mb-3">
+    <input type="date" class="form-control" id="crFecha" style="width:180px">
+    <button class="btn btn-primary" onclick="loadCR()">📄 Generar CR</button>
+    <button class="btn btn-outline-secondary" onclick="window.print()">🖨 Imprimir</button>
+  </div>
+  <div id="crContent"></div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- TAB: STORAGE -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+<div id="tab-storage" class="d-none p-3">
+  <div class="d-flex align-items-center gap-3 mb-3">
+    <input type="date" class="form-control" id="stFecha" style="width:180px">
+    <button class="btn btn-primary" onclick="loadStorage()">📦 Generar Storage</button>
+  </div>
+  <div id="storageContent"></div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- IMPORT MODAL -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+<div class="modal fade" id="importModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header" style="background:var(--navy);color:#fff">
+        <h5 class="modal-title">⬇ Descargar desde WebFlowers</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="row g-2 mb-3">
+          <div class="col">
+            <label class="form-label fw-bold">Fecha Inicio</label>
+            <input type="date" class="form-control" id="impFrom">
+          </div>
+          <div class="col">
+            <label class="form-label fw-bold">Fecha Fin</label>
+            <input type="date" class="form-control" id="impTo">
+          </div>
+        </div>
+        <div class="progress-log" id="importLog">Listo para importar...</div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-bs-dismiss="modal" id="btnCancelImport">Cerrar</button>
+        <button class="btn btn-success" id="btnStartImport" onclick="startImport()">▶ Iniciar Descarga</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+// ── AUTH ─────────────────────────────────────────────────────────
+const token = localStorage.getItem('token');
+if (!token) window.location.href = '/';
+
+const username = localStorage.getItem('username') || '';
+const isAdmin  = localStorage.getItem('is_admin') === '1';
+document.getElementById('navUsername').textContent = '👤 ' + username;
+if (isAdmin) document.getElementById('adminLink').classList.remove('d-none');
+
+function logout() {
+  localStorage.clear();
+  window.location.href = '/';
+}
+
+function authHeaders() {
+  return { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token };
+}
+
+// ── TABS ─────────────────────────────────────────────────────────
+function showTab(name, el) {
+  ['dist','cr','storage'].forEach(t => {
+    document.getElementById('tab-'+t).classList.add('d-none');
+  });
+  document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
+  document.getElementById('tab-'+name).classList.remove('d-none');
+  el.classList.add('active');
+}
+
+// ── CUSTOMER COLOR ────────────────────────────────────────────────
+function customerColor(cust) {
+  const c = (cust || '').toUpperCase();
+  if (['7084 BC','7084 CR','7084 EF','7084 RF','8852 BC','8852 CR','8852 EF','8852 RF'].some(x => c.includes(x))) return 'c-blue';
+  if (c === '7084 RIVERSIDE WAL-MART' || c === '8852 SHAFTER WAL-MART') return 'c-yellow';
+  if (c.includes('7084 WM') || c.includes('8852 WM')) return 'c-green';
+  if (c.includes('ALDI'))    return 'c-purple';
+  if (c.includes('CVS'))     return 'c-pink';
+  if (c.includes('NORCAL'))  return 'c-gray';
+  if (c.includes('SPROUTS')) return 'c-sprout';
+  if (c.includes('STATER'))  return 'c-stater';
+  if (c.includes('TAWA'))    return 'c-tawa';
+  return '';
+}
+
+// ── DISTRIBUCION ──────────────────────────────────────────────────
+let distData = [];
+
+async function loadDist() {
+  const params = new URLSearchParams();
+  const fecha    = document.getElementById('fFecha').value;
+  const dia      = document.getElementById('fDia').value;
+  const cliente  = document.getElementById('fCliente').value;
+  const producto = document.getElementById('fProducto').value;
+  const activ    = document.getElementById('fActividad').value;
+  if (fecha) params.set('fecha', formatDateToUS(fecha));
+  if (dia)   params.set('dia', dia);
+  if (cliente)  params.set('cliente', cliente);
+  if (producto) params.set('producto', producto);
+  if (activ)    params.set('actividad', activ);
+
+  const res = await fetch('/api/distribucion?' + params.toString(), { headers: authHeaders() });
+  if (res.status === 401) { logout(); return; }
+  distData = await res.json();
+  renderDist(distData);
+}
+
+function formatDateToUS(isoDate) {
+  if (!isoDate) return '';
+  const [y,m,d] = isoDate.split('-');
+  return `${m}/${d}/${y}`;
+}
+
+function renderDist(rows) {
+  const tbody = document.getElementById('distBody');
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="15" class="text-center text-muted py-4">No hay datos para los filtros seleccionados</td></tr>';
+    return;
+  }
+
+  let html = '';
+  let lastDate = null;
+
+  rows.forEach(row => {
+    if (row.due_date !== lastDate && row.due_date) {
+      lastDate = row.due_date;
+      const dayName = getDayName(row.due_date);
+      html += `<tr class="sep-row"><td colspan="15">${dayName}  ${row.due_date}</td></tr>`;
+    }
+    const cc = row.activity === 'CD' ? 'c-cd' : customerColor(row.customer);
+    const bk = (row.buckets || 0) > 0 ? 'bucket-cell' : cc;
+    html += `<tr>
+      <td class="${cc} editable-cell" ondblclick="editCell(this,${row.id},'day')">${row.day||''}</td>
+      <td class="${cc} editable-cell" ondblclick="editCell(this,${row.id},'po_inbound')">${row.po_inbound||''}</td>
+      <td class="${cc} editable-cell" ondblclick="editCell(this,${row.id},'load_col')">${row.load_col||''}</td>
+      <td class="${cc} editable-cell" ondblclick="editCell(this,${row.id},'prioridad')">${row.prioridad||''}</td>
+      <td class="${cc}">${row.customer_group||''}</td>
+      <td class="${cc}">${row.customer||''}</td>
+      <td class="${cc}">${row.due_date||''}</td>
+      <td class="${cc}">${row.po_outbound||''}</td>
+      <td class="${cc}">${row.product_name||''}</td>
+      <td class="${cc}">${row.pull_date||''}</td>
+      <td class="${cc}">${row.box||''}</td>
+      <td class="${cc}">${row.pack||''}</td>
+      <td class="${cc}">${row.boxes||''}</td>
+      <td class="${cc}">${row.activity||''}</td>
+      <td class="${bk}">${row.buckets||''}</td>
+    </tr>`;
+  });
+  tbody.innerHTML = html;
+}
+
+function getDayName(dateStr) {
+  if (!dateStr) return '';
+  const [m,d,y] = dateStr.split('/');
+  const dt = new Date(`${y}-${m}-${d}`);
+  return ['SUNDAY','MONDAY','TUESDAY','WEDNESDAY','THURSDAY','FRIDAY','SATURDAY'][dt.getDay()];
+}
+
+function editCell(td, id, field) {
+  const current = td.textContent.trim();
+  td.innerHTML = `<input type="text" value="${current}" onblur="saveCell(this,${id},'${field}')" onkeydown="if(event.key==='Enter')this.blur()">`;
+  td.querySelector('input').focus();
+}
+
+async function saveCell(input, id, field) {
+  const val = input.value.trim();
+  const td  = input.parentElement;
+  td.textContent = val;
+  const body = {};
+  body[field] = val;
+  try {
+    await fetch(`/api/distribucion/${id}`, {
+      method: 'PUT',
+      headers: authHeaders(),
+      body: JSON.stringify(body)
+    });
+    // Update local data
+    const row = distData.find(r => r.id === id);
+    if (row) row[field] = val;
+  } catch(e) {
+    console.error('Error saving:', e);
+  }
+}
+
+// ── IMPORT ────────────────────────────────────────────────────────
+let importModal;
+
+function openImportModal() {
+  document.getElementById('importLog').textContent = 'Listo para importar...';
+  document.getElementById('btnStartImport').disabled = false;
+  importModal = new bootstrap.Modal(document.getElementById('importModal'));
+  importModal.show();
+}
+
+async function startImport() {
+  const from = document.getElementById('impFrom').value;
+  const to   = document.getElementById('impTo').value;
+  if (!from || !to) { alert('Selecciona ambas fechas'); return; }
+
+  const fromUS = formatDateToUS(from);
+  const toUS   = formatDateToUS(to);
+  const log    = document.getElementById('importLog');
+  log.textContent = '';
+  document.getElementById('btnStartImport').disabled = true;
+
+  const appendLog = (msg) => {
+    log.textContent += msg + '\n';
+    log.scrollTop = log.scrollHeight;
+  };
+
+  appendLog(`Iniciando descarga: ${fromUS} → ${toUS}`);
+
+  try {
+    const res = await fetch('/api/import/start', {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ date_from: fromUS, date_to: toUS })
+    });
+    const { job_id } = await res.json();
+
+    const es = new EventSource(`/api/import/progress/${job_id}?token=${token}`);
+    es.onmessage = function(e) {
+      const msg = e.data;
+      if (msg.startsWith('__DONE__')) {
+        const result = JSON.parse(msg.replace('__DONE__:', ''));
+        appendLog(`✅ Listo! +${result.added} nuevas, ~${result.updated} actualizadas, -${result.deleted} eliminadas`);
+        es.close();
+        document.getElementById('btnStartImport').disabled = false;
+        loadDist();
+      } else if (msg.startsWith('__ERROR__')) {
+        appendLog('❌ Error: ' + msg.replace('__ERROR__:', ''));
+        es.close();
+        document.getElementById('btnStartImport').disabled = false;
+      } else if (msg === '__TIMEOUT__') {
+        appendLog('⏱ Timeout esperando respuesta');
+        es.close();
+        document.getElementById('btnStartImport').disabled = false;
+      } else {
+        appendLog(msg);
+      }
+    };
+    es.onerror = function() {
+      appendLog('❌ Conexion perdida');
+      es.close();
+      document.getElementById('btnStartImport').disabled = false;
+    };
+  } catch(err) {
+    appendLog('❌ Error: ' + err.message);
+    document.getElementById('btnStartImport').disabled = false;
+  }
+}
+
+// ── CR ─────────────────────────────────────────────────────────────
+async function loadCR() {
+  const fecha = document.getElementById('crFecha').value;
+  if (!fecha) { alert('Selecciona una fecha'); return; }
+  const fechaUS = formatDateToUS(fecha);
+
+  const res = await fetch(`/api/cr?fecha=${encodeURIComponent(fechaUS)}`, { headers: authHeaders() });
+  if (!res.ok) { alert('Error generando CR'); return; }
+  const data = await res.json();
+  renderCR(data);
+
+  // Sync storage date
+  document.getElementById('stFecha').value = fecha;
+}
+
+function renderCR(data) {
+  let html = `
+    <div class="d-flex mb-2 align-items-stretch" style="gap:0">
+      <div class="cr-header-date">${data.label_dia}</div>
+      <div style="flex:1"></div>
+      <div class="cr-line-badge">LINE 1</div>
+      ${data.line2 ? '<div class="cr-line-badge ms-1">LINE 2</div>' : ''}
+    </div>
+    <table class="cr-table mb-3">
+      <tr class="cr-sum-row">
+        <td colspan="10"><strong>Sum of Buckets</strong></td>
+        <td class="cr-total-cell"><strong>${data.total_buckets}</strong></td>
+      </tr>
+      <tr class="cr-header-row">
+        <th>Prioridad</th><th>PO INBOUND</th><th>Customer</th><th>Due Date</th>
+        <th>P.O# OUTBOUND</th><th>Product Name</th><th>Pull Date</th>
+        <th>Box</th><th>Pack</th><th>Activity</th><th>Total</th>
+      </tr>`;
+
+  data.rows.forEach(row => {
+    const cc = row.is_cd ? 'c-cd' : customerColor(row.customer);
+    const tc = row.total > 0 ? 'cr-total-cell' : cc;
+    html += `<tr>
+      <td class="${cc}">${row.prioridad||''}</td>
+      <td class="${cc}">${row.po_inbound||''}</td>
+      <td class="${cc}">${row.customer||''}</td>
+      <td class="${cc}">${row.due_date||''}</td>
+      <td class="${cc}">${row.po_outbound||''}</td>
+      <td class="${cc}">${row.product_name||''}</td>
+      <td class="${cc}">${row.pull_date||''}</td>
+      <td class="${cc}">${row.box||''}</td>
+      <td class="${cc}">${row.pack||''}</td>
+      <td class="${cc}">${row.activity||''}</td>
+      <td class="${tc}">${row.total||''}</td>
+    </tr>`;
+  });
+
+  html += `
+      <tr class="cr-sum-row">
+        <td colspan="10"><strong>Grand Total</strong></td>
+        <td class="cr-total-cell"><strong>${data.total_buckets}</strong></td>
+      </tr>
+    </table>`;
+
+  document.getElementById('crContent').innerHTML = html;
+}
+
+// ── STORAGE ────────────────────────────────────────────────────────
+async function loadStorage() {
+  const fecha = document.getElementById('stFecha').value;
+  if (!fecha) { alert('Selecciona una fecha'); return; }
+  const fechaUS = formatDateToUS(fecha);
+
+  const res = await fetch(`/api/storage?fecha=${encodeURIComponent(fechaUS)}`, { headers: authHeaders() });
+  if (!res.ok) { alert('Error generando Storage'); return; }
+  const data = await res.json();
+  renderStorage(data);
+
+  // Sync CR date
+  document.getElementById('crFecha').value = fecha;
+}
+
+function renderStorage(data) {
+  let html = `
+    <h5 class="mb-3" style="color:var(--navy)">STORAGE — ${data.label_dia}</h5>
+    <table class="storage-table">
+      <thead><tr><th>Box</th><th>Cajas</th><th>Vases</th><th>Activity</th></tr></thead>
+      <tbody>`;
+
+  data.rows.forEach(r => {
+    const vaseClass = r.vases > 0 ? 'vase-cell' : '';
+    html += `<tr>
+      <td>${r.box}</td>
+      <td>${r.cajas % 1 === 0 ? r.cajas : r.cajas.toFixed(2)}</td>
+      <td class="${vaseClass}">${r.vases > 0 ? (r.vases % 1 === 0 ? r.vases : r.vases.toFixed(0)) : ''}</td>
+      <td>${r.activity}</td>
+    </tr>`;
+  });
+
+  html += `
+      </tbody>
+      <tfoot>
+        <tr class="storage-total">
+          <td><strong>TOTAL</strong></td>
+          <td>${data.total_cajas % 1 === 0 ? data.total_cajas : data.total_cajas.toFixed(2)}</td>
+          <td>${data.total_vases > 0 ? (data.total_vases % 1 === 0 ? data.total_vases : data.total_vases.toFixed(0)) : ''}</td>
+          <td></td>
+        </tr>
+      </tfoot>
+    </table>`;
+
+  document.getElementById('storageContent').innerHTML = html;
+}
+
+// ── INIT ──────────────────────────────────────────────────────────
+loadDist();
+</script>
+</body>
+</html>
