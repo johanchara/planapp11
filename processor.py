@@ -3,7 +3,8 @@ processor.py - Data processing: read SalesReport and merge into SQLite
 """
 import hashlib
 import json
-import pandas as pd
+import html
+import re
 from datetime import datetime
 from database import get_conn, get_codigos_map
 
@@ -14,53 +15,138 @@ def limpiar_col(nombre):
     return str(nombre).strip().replace('\xa0', '').strip()
 
 
-def encontrar_col(df, nombres):
+def encontrar_col(headers, nombres):
     for n in nombres:
-        if n in df.columns:
+        if n in headers:
             return n
     return None
 
 
-def encontrar_col_parcial(df, texto):
-    for c in df.columns:
+def encontrar_col_parcial(headers, texto):
+    for c in headers:
         if texto.lower() in c.lower():
             return c
     return None
 
 
-def encontrar_col_po(df):
+def encontrar_col_po(headers):
     opciones = ['P.O#', 'Final Cust. PO#', 'Final Cust PO#', 'P.O# OUTBOUND', 'P.O#  OUTBOUND']
     for op in opciones:
-        if op in df.columns:
+        if op in headers:
             return op
-    for c in df.columns:
+    for c in headers:
         if 'final cust' in c.lower() and 'po' in c.lower():
             return c
-    for c in df.columns:
+    for c in headers:
         cl = c.replace('\xa0','').replace(' ','').upper()
         if cl in ['P.O#', 'PO#']:
             return c
     return None
 
 
-def cargar_sales_report(filepath: str) -> pd.DataFrame:
+def _parse_date(val):
+    """Try to parse a date value to MM/DD/YYYY string."""
+    if val is None:
+        return ''
+    s = str(val).strip()
+    if not s or s in ('nan', 'None', ''):
+        return ''
+    # Already formatted
+    for fmt in ('%m/%d/%Y', '%Y-%m-%d', '%m-%d-%Y', '%d/%m/%Y'):
+        try:
+            return datetime.strptime(s, fmt).strftime('%m/%d/%Y')
+        except ValueError:
+            pass
+    # Excel serial number
     try:
-        tablas = pd.read_html(filepath, header=0)
-        if tablas:
-            df = tablas[0]
-            df.columns = [limpiar_col(str(c)) for c in df.columns]
-            return df
+        n = float(s)
+        if 30000 < n < 80000:
+            from datetime import timedelta
+            base = datetime(1899, 12, 30)
+            return (base + timedelta(days=n)).strftime('%m/%d/%Y')
     except Exception:
         pass
+    return s
+
+
+def _read_html_table(filepath: str):
+    """Parse HTML file and return list of rows as dicts."""
+    with open(filepath, 'r', encoding='utf-8', errors='replace') as f:
+        content = f.read()
+    # Find first <table>
+    table_match = re.search(r'<table[^>]*>(.*?)</table>', content, re.IGNORECASE | re.DOTALL)
+    if not table_match:
+        return None
+    table_html = table_match.group(1)
+    rows = re.findall(r'<tr[^>]*>(.*?)</tr>', table_html, re.IGNORECASE | re.DOTALL)
+    if not rows:
+        return None
+    def cell_text(cell):
+        text = re.sub(r'<[^>]+>', '', cell)
+        return html.unescape(text).strip().replace('\xa0', '').strip()
+    headers = None
+    result = []
+    for row in rows:
+        cells = re.findall(r'<t[hd][^>]*>(.*?)</t[hd]>', row, re.IGNORECASE | re.DOTALL)
+        vals = [cell_text(c) for c in cells]
+        if not vals:
+            continue
+        if headers is None:
+            headers = [limpiar_col(v) for v in vals]
+        else:
+            if len(vals) < len(headers):
+                vals += [''] * (len(headers) - len(vals))
+            result.append(dict(zip(headers, vals)))
+    return headers, result
+
+
+def _read_excel_table(filepath: str):
+    """Read Excel file using openpyxl, return (headers, rows_as_dicts)."""
+    from openpyxl import load_workbook
     try:
-        df = pd.read_excel(filepath, header=0, engine='openpyxl')
-        df.columns = [limpiar_col(str(c)) for c in df.columns]
-        return df
+        wb = load_workbook(filepath, read_only=True, data_only=True)
+    except Exception:
+        import xlrd
+        book = xlrd.open_workbook(filepath)
+        sheet = book.sheet_by_index(0)
+        headers = [limpiar_col(str(sheet.cell_value(0, c))) for c in range(sheet.ncols)]
+        rows = []
+        for r in range(1, sheet.nrows):
+            row = {}
+            for c, h in enumerate(headers):
+                row[h] = sheet.cell_value(r, c)
+            rows.append(row)
+        return headers, rows
+    ws = wb.active
+    rows_iter = iter(ws.rows)
+    header_row = next(rows_iter, None)
+    if header_row is None:
+        return [], []
+    headers = [limpiar_col(str(cell.value) if cell.value is not None else '') for cell in header_row]
+    rows = []
+    for row in rows_iter:
+        d = {}
+        for h, cell in zip(headers, row):
+            v = cell.value
+            if v is None:
+                d[h] = ''
+            else:
+                d[h] = v
+        rows.append(d)
+    return headers, rows
+
+
+def cargar_sales_report(filepath: str):
+    """Return (headers, rows_as_dicts) from HTML or Excel file."""
+    # Try HTML first
+    try:
+        result = _read_html_table(filepath)
+        if result and result[1]:
+            return result
     except Exception:
         pass
-    df = pd.read_excel(filepath, header=0, engine='xlrd')
-    df.columns = [limpiar_col(str(c)) for c in df.columns]
-    return df
+    # Try openpyxl/xlrd
+    return _read_excel_table(filepath)
 
 
 def construir_key(po, product, due_date, customer='', boxes=''):
@@ -78,27 +164,27 @@ def procesar_e_importar(filepath: str, imported_by: str, progress_cb=None) -> di
             progress_cb(msg)
 
     log("Leyendo archivo de ventas...")
-    df = cargar_sales_report(filepath)
-    log(f"Filas leidas: {len(df)}")
+    headers, filas_raw = cargar_sales_report(filepath)
+    log(f"Filas leidas: {len(filas_raw)}")
 
     tabla_buckets = get_codigos_map()
 
-    col_customer_group = encontrar_col_parcial(df, 'Customer Group')
-    col_customer   = encontrar_col(df, ['Customer', 'Customer '])
-    col_due_date   = encontrar_col_parcial(df, 'Due Date')
-    col_po_outbound = encontrar_col_po(df)
-    col_product    = encontrar_col_parcial(df, 'Product Name')
-    col_pull_date  = encontrar_col(df, ['Pull Date', 'Pull Date '])
-    col_box        = encontrar_col(df, ['Box', 'Box '])
-    col_pack       = encontrar_col(df, ['Pack', 'Pack '])
-    col_boxes      = encontrar_col(df, ['Boxes', 'Boxes '])
+    col_customer_group = encontrar_col_parcial(headers, 'Customer Group')
+    col_customer   = encontrar_col(headers, ['Customer', 'Customer '])
+    col_due_date   = encontrar_col_parcial(headers, 'Due Date')
+    col_po_outbound = encontrar_col_po(headers)
+    col_product    = encontrar_col_parcial(headers, 'Product Name')
+    col_pull_date  = encontrar_col(headers, ['Pull Date', 'Pull Date '])
+    col_box        = encontrar_col(headers, ['Box', 'Box '])
+    col_pack       = encontrar_col(headers, ['Pack', 'Pack '])
+    col_boxes      = encontrar_col(headers, ['Boxes', 'Boxes '])
 
     log(f"Columnas: PO={col_po_outbound}, Box={col_box}, Boxes={col_boxes}")
 
     nuevas_keys = set()
     nuevas_filas = []
 
-    for _, row in df.iterrows():
+    for row in filas_raw:
         box_code = str(row.get(col_box, '') if col_box else '').strip()
         info = tabla_buckets.get(box_code, {'multiplicador': 1, 'actividad': 'WPO', 'categoria': 'WPO'})
         multiplicador = info['multiplicador']
@@ -112,29 +198,15 @@ def procesar_e_importar(filepath: str, imported_by: str, progress_cb=None) -> di
 
         buckets = boxes * multiplicador
 
-        pack = ''
+        pack = 0.0
         if col_pack:
             try:
                 pack = float(row[col_pack])
             except Exception:
                 pack = 0.0
 
-        due_date = None
-        due_date_str = ''
-        if col_due_date:
-            try:
-                due_date = pd.to_datetime(row[col_due_date])
-                due_date_str = due_date.strftime('%m/%d/%Y')
-            except Exception:
-                due_date_str = str(row.get(col_due_date, ''))
-
-        pull_date_str = ''
-        if col_pull_date:
-            try:
-                pd_val = pd.to_datetime(row[col_pull_date])
-                pull_date_str = pd_val.strftime('%m/%d/%Y')
-            except Exception:
-                pull_date_str = str(row.get(col_pull_date, ''))
+        due_date_str = _parse_date(row.get(col_due_date, '') if col_due_date else '')
+        pull_date_str = _parse_date(row.get(col_pull_date, '') if col_pull_date else '')
 
         po_val = ''
         if col_po_outbound:
@@ -188,7 +260,6 @@ def procesar_e_importar(filepath: str, imported_by: str, progress_cb=None) -> di
         ).fetchone()
 
         if existing:
-            # Update data fields, preserve manual edits
             conn.execute("""
                 UPDATE distribucion SET
                     customer_group=?, customer=?, due_date=?, po_outbound=?,
@@ -221,8 +292,8 @@ def procesar_e_importar(filepath: str, imported_by: str, progress_cb=None) -> di
 
     # Save sales raw data
     import_time = now
-    for _, row in df.iterrows():
-        row_dict = {k: (str(v) if pd.notna(v) else '') for k, v in row.items()}
+    for row in filas_raw:
+        row_dict = {k: str(v) for k, v in row.items()}
         conn.execute(
             "INSERT INTO sales (imported_at, data_json) VALUES (?,?)",
             (import_time, json.dumps(row_dict))
