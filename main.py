@@ -8,7 +8,7 @@ import threading
 from datetime import datetime
 from typing import Optional
 
-from fastapi import FastAPI, Depends, HTTPException, Request, status
+from fastapi import FastAPI, Depends, HTTPException, Request, status, UploadFile, File
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -210,6 +210,30 @@ async def import_start(req: ImportRequest, current_user=Depends(get_current_user
     t.start()
 
     return {"job_id": job_id}
+
+
+@app.post("/api/import/upload")
+async def import_upload(
+    file: UploadFile = File(...),
+    current_user=Depends(get_current_user)
+):
+    """Recibe un archivo Sales Report ya descargado y lo procesa."""
+    import tempfile, uuid
+    suffix = os.path.splitext(file.filename)[1] if file.filename else ".xls"
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix, prefix="webflowers_")
+    try:
+        content = await file.read()
+        tmp.write(content)
+        tmp.close()
+        result = procesar_e_importar(tmp.path if hasattr(tmp, 'path') else tmp.name, current_user["username"])
+        return {"ok": True, "result": result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        try:
+            os.unlink(tmp.name)
+        except Exception:
+            pass
 
 
 @app.get("/api/import/progress/{job_id}")
