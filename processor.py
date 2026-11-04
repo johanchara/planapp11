@@ -394,9 +394,8 @@ def generar_cr(fecha_str: str) -> dict:
 
 
 def _incluir_en_cr(row: dict, fecha_str: str, nombre_dia: str) -> bool:
-    due = str(row.get('due_date', '')).strip()
     day_col = str(row.get('day', '')).strip().upper()
-    return due == fecha_str or day_col == nombre_dia
+    return day_col == nombre_dia
 
 
 def _make_cr_row(row: dict, bucket_val: float) -> dict:
